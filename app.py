@@ -408,8 +408,6 @@ def render_sidebar() -> None:
         st.sidebar.success("Documents are ready. Ask your questions!")
         st.sidebar.metric("Files", stats["files"])
         st.sidebar.metric("Sections (pages / slides / rows)", stats["sections"])
-        st.sidebar.metric("Chunks indexed", stats["chunks"])
-    st.sidebar.caption(f"Model: {CHAT_MODEL}")
  
     if st.sidebar.button("Clear chat"):
         st.session_state.messages = []
@@ -451,6 +449,17 @@ def render_chat() -> None:
  
 def main() -> None:
     st.set_page_config(page_title="Multi-Document Chat", page_icon="📚")
+    # Hide Streamlit's built-in Deploy button in the top-right toolbar.
+    st.markdown(
+        """
+        <style>
+        [data-testid="stDeployButton"] {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     st.title("📚 Chat with Your Documents")
     st.caption("Generative AI on the cloud: LangChain + Gemini + FAISS, deployed with Docker.")
  
