@@ -19,6 +19,7 @@ import struct
 import subprocess
 import tempfile
 import threading
+import uuid
 from pathlib import Path
  
 import streamlit as st
@@ -41,6 +42,7 @@ RATE_LIMIT_WAIT = 50       # seconds to wait if Google still says "too many requ
 EMBEDDING_MODEL = "models/gemini-embedding-001"
 DEFAULT_MODEL = "gemini-2.5-flash"
 CHAT_MODEL = os.getenv("GEMINI_MODEL") or DEFAULT_MODEL
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 SUPPORTED_TYPES = ["pdf", "txt", "csv", "json", "yaml", "yml", "doc", "docx", "ppt", "pptx"]
  
  
@@ -288,6 +290,101 @@ def format_history(messages):
     return "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in recent)
  
  
+def initialize_database() -> bool:
+    """Create the PostgreSQL tables when DATABASE_URL is configured."""
+    if not DATABASE_URL:
+        return False
+
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as connection:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS app_sessions (
+                session_id TEXT PRIMARY KEY,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                session_id TEXT NOT NULL REFERENCES app_sessions(session_id) ON DELETE CASCADE,
+                file_name TEXT NOT NULL,
+                section_count INTEGER NOT NULL DEFAULT 0,
+                uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (session_id, file_name)
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id BIGSERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES app_sessions(session_id) ON DELETE CASCADE,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+    return True
+
+
+def save_document_metadata(session_id: str, documents) -> None:
+    """Persist uploaded document names and section counts for this app session."""
+    import psycopg
+
+    counts = {}
+    for document in documents:
+        name = document.metadata["source"]
+        counts[name] = counts.get(name, 0) + 1
+
+    with psycopg.connect(DATABASE_URL) as connection:
+        connection.execute(
+            "INSERT INTO app_sessions (session_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (session_id,),
+        )
+        for name, count in counts.items():
+            connection.execute(
+                """
+                INSERT INTO documents (session_id, file_name, section_count)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (session_id, file_name)
+                DO UPDATE SET section_count = EXCLUDED.section_count, uploaded_at = NOW()
+                """,
+                (session_id, name, count),
+            )
+
+
+def load_chat_history(session_id: str) -> list[dict]:
+    """Restore saved messages after the user reprocesses their documents."""
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as connection:
+        connection.execute(
+            "INSERT INTO app_sessions (session_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (session_id,),
+        )
+        rows = connection.execute(
+            "SELECT role, content FROM chat_messages WHERE session_id = %s ORDER BY id",
+            (session_id,),
+        ).fetchall()
+    return [{"role": row[0], "content": row[1]} for row in rows]
+
+
+def save_chat_exchange(session_id: str, question: str, answer: str) -> None:
+    """Save one user question and its assistant response."""
+    import psycopg
+
+    with psycopg.connect(DATABASE_URL) as connection:
+        connection.execute(
+            "INSERT INTO app_sessions (session_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (session_id,),
+        )
+        connection.executemany(
+            "INSERT INTO chat_messages (session_id, role, content) VALUES (%s, %s, %s)",
+            [
+                (session_id, "user", question),
+                (session_id, "assistant", answer),
+            ],
+        )
+
+
 def build_prompt(question, sources, history):
     """Combine retrieved context, chat history and the question into one prompt."""
     context = "\n\n".join(
@@ -385,7 +482,15 @@ def process_documents(uploaded_files) -> None:
         "sections": len(documents),
         "chunks": len(chunks),
     }
-    st.session_state.messages = []
+    if DATABASE_URL:
+        try:
+            save_document_metadata(st.session_state.session_id, documents)
+            st.sidebar.caption("Document details saved to PostgreSQL.")
+            st.session_state.messages = load_chat_history(st.session_state.session_id)
+        except Exception as error:
+            st.sidebar.warning(f"Database save failed: {error}")
+    else:
+        st.session_state.messages = []
  
  
 def render_sidebar() -> None:
@@ -445,6 +550,11 @@ def render_chat() -> None:
         {"role": "user", "content": question},
         {"role": "assistant", "content": answer},
     ]
+    if DATABASE_URL:
+        try:
+            save_chat_exchange(st.session_state.session_id, question, answer)
+        except Exception as error:
+            st.warning(f"Could not save chat history to PostgreSQL: {error}")
  
  
 def apply_theme() -> None:
@@ -616,6 +726,12 @@ def main() -> None:
 
     warm_up()
     st.session_state.setdefault("messages", [])
+    st.session_state.setdefault("session_id", str(uuid.uuid4()))
+    if DATABASE_URL:
+        try:
+            initialize_database()
+        except Exception as error:
+            st.sidebar.warning(f"PostgreSQL is not available: {error}")
     render_sidebar()
 
     if "store" not in st.session_state:
