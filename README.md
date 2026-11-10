@@ -33,12 +33,31 @@ Old `.doc` files need the `catdoc` tool (`sudo apt install catdoc` on Linux,
 `brew install catdoc` on Mac). Without it, `.doc` files are skipped with a message;
 all other formats work without it.
 
-## Run with Docker
+## Run with Docker Compose (recommended)
+
+1. Copy `.env.example` to `.env`.
+2. Add your Gemini API key to `.env` and change the PostgreSQL password.
+3. Build and start the application and database:
+
 ```bash
-docker build -t multidoc-chat .
-docker run -p 8080:8080 -e GOOGLE_API_KEY=your_key_here multidoc-chat
+docker compose up --build -d
 ```
+
 Open http://localhost:8080
+
+View logs with `docker compose logs -f app` and stop the stack with
+`docker compose down`. PostgreSQL data is stored in the named `postgres_data`
+volume and survives normal container recreation. To delete the database data too,
+run `docker compose down -v`.
+
+The application image installs the PostgreSQL Python driver through
+`requirements.txt`. PostgreSQL runs as a separate service in
+`docker-compose.yml`; it is not installed inside the application image.
+
+PostgreSQL stores document metadata and chat messages. FAISS currently remains
+in application memory for each Streamlit session, so the vector index must be
+rebuilt by uploading and processing the documents again after a container or
+session restart.
 
 ## Deploy on Google Cloud Run
 ```bash
@@ -49,5 +68,6 @@ gcloud run deploy multidoc-chat --source . --region asia-south1 \
 ## Notes
 - Scanned PDFs and images have no text layer and cannot be read.
 - Only the first 1,000 rows of each CSV are read (`MAX_TABLE_ROWS` in `app.py`).
-- The index lives in memory for the session; refreshing the page clears it.
+- The FAISS index lives in memory for the Streamlit session; process documents again after a session or container restart.
+- PostgreSQL stores chat history and document metadata when started through Docker Compose.
 - The chat model can be changed with the `GEMINI_MODEL` environment variable.
