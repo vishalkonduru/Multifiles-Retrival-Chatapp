@@ -1,0 +1,34 @@
+services:
+  app:
+    build: .
+    image: mfc:1.1
+    container_name: multifiles-chatapp
+    ports:
+      - "8080:8080"
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mfc_user}:${POSTGRES_PASSWORD:-change_this_password}@db:5432/${POSTGRES_DB:-mfc_db}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    container_name: multifiles-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mfc_db}
+      POSTGRES_USER: ${POSTGRES_USER:-mfc_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_this_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mfc_user} -d ${POSTGRES_DB:-mfc_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
