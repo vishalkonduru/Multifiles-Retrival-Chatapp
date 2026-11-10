@@ -396,7 +396,7 @@ def render_sidebar() -> None:
         type=SUPPORTED_TYPES,
         accept_multiple_files=True,
     )
-    if st.sidebar.button("Submit & Process", type="primary", disabled=not uploaded_files):
+    if st.sidebar.button("Process documents", type="primary", disabled=not uploaded_files):
         with st.spinner("Reading and indexing your files..."):
             try:
                 process_documents(uploaded_files)
@@ -447,33 +447,202 @@ def render_chat() -> None:
     ]
  
  
-def main() -> None:
-    st.set_page_config(page_title="Multi-Document Chat", page_icon="📚")
-    # Hide Streamlit's built-in Deploy button in the top-right toolbar.
+def apply_theme() -> None:
+    """Apply a clean orange-and-white theme to Streamlit's interface."""
     st.markdown(
         """
         <style>
-        [data-testid="stDeployButton"] {
-            display: none !important;
+        :root {
+            --orange: #f97316;
+            --orange-dark: #ea580c;
+            --orange-soft: #fff7ed;
+            --ink: #242424;
+            --muted: #777777;
+            --line: #f0e5dc;
+        }
+        .stApp {
+            background: #fffdfb;
+            color: var(--ink);
+        }
+        [data-testid="stHeader"] {
+            background: rgba(255, 253, 251, 0.96);
+        }
+        [data-testid="stDeployButton"] { display: none !important; }
+        [data-testid="stToolbar"] { right: 1rem; }
+        [data-testid="stSidebar"] {
+            background: #fff7ed;
+            border-right: 1px solid #f3e5d8;
+        }
+        [data-testid="stSidebar"] > div:first-child {
+            padding-top: 2rem;
+        }
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3 {
+            color: #292524;
+            font-weight: 700;
+        }
+        [data-testid="stFileUploader"] section {
+            background: #ffffff;
+            border: 1px dashed #f4a261;
+            border-radius: 14px;
+        }
+        [data-testid="stFileUploader"] section:hover {
+            border-color: var(--orange);
+        }
+        .stButton > button[kind="primary"],
+        [data-testid="stFormSubmitButton"] > button {
+            background: var(--orange);
+            color: #ffffff;
+            border: 1px solid var(--orange);
+            border-radius: 10px;
+            font-weight: 650;
+            min-height: 2.7rem;
+        }
+        .stButton > button[kind="primary"]:hover,
+        [data-testid="stFormSubmitButton"] > button:hover {
+            background: var(--orange-dark);
+            border-color: var(--orange-dark);
+            color: #ffffff;
+        }
+        .stButton > button:not([kind="primary"]) {
+            border: 1px solid #ead8ca;
+            border-radius: 10px;
+            color: #44403c;
+            background: #ffffff;
+        }
+        [data-testid="stMetric"] {
+            background: #ffffff;
+            border: 1px solid #f1e4d9;
+            border-radius: 12px;
+            padding: 12px 14px;
+        }
+        [data-testid="stMetricValue"] {
+            color: var(--orange-dark);
+            font-weight: 750;
+        }
+        [data-testid="stChatMessage"] {
+            background: #ffffff;
+            border: 1px solid #f0e7df;
+            border-radius: 16px;
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+        }
+        [data-testid="stChatInput"] {
+            border-color: #edc6a8;
+            border-radius: 14px;
+        }
+        [data-testid="stChatInput"]:focus-within {
+            border-color: var(--orange);
+            box-shadow: 0 0 0 2px #ffedd5;
+        }
+        .app-hero {
+            padding: 1.2rem 0 1.5rem 0;
+            border-bottom: 1px solid #f2e8e0;
+            margin-bottom: 1.8rem;
+        }
+        .app-kicker {
+            display: inline-block;
+            color: #c2410c;
+            background: #ffedd5;
+            border-radius: 999px;
+            padding: 5px 11px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: .02em;
+            margin-bottom: 0.7rem;
+        }
+        .app-title {
+            color: #292524;
+            font-size: clamp(1.8rem, 3vw, 2.5rem);
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            line-height: 1.15;
+            margin: 0;
+        }
+        .app-subtitle {
+            color: #78716c;
+            font-size: 1rem;
+            margin-top: 0.6rem;
+        }
+        .welcome-card {
+            background: linear-gradient(135deg, #fff7ed 0%, #ffffff 75%);
+            border: 1px solid #f3dfce;
+            border-radius: 20px;
+            padding: 2rem;
+            margin: 1rem 0 1.5rem 0;
+        }
+        .welcome-card h3 {
+            color: #292524;
+            font-size: 1.35rem;
+            margin: 0 0 .5rem 0;
+        }
+        .welcome-card p {
+            color: #78716c;
+            margin: 0;
+            line-height: 1.6;
+        }
+        @media (max-width: 700px) {
+            [data-testid="stSidebar"] { min-width: 260px; }
+            .welcome-card { padding: 1.25rem; }
         }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    st.title("📚 Chat with Your Documents")
-    st.caption("Generative AI on the cloud: LangChain + Gemini + FAISS, deployed with Docker.")
- 
+
+
+def main() -> None:
+    st.set_page_config(
+        page_title="Chat with Your Documents",
+        page_icon="📚",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    apply_theme()
+    st.markdown(
+        """
+        <div class="app-hero">
+            <div class="app-kicker">YOUR PERSONAL DOCUMENT ASSISTANT</div>
+            <h1 class="app-title">📚 Chat with your documents</h1>
+            <p class="app-subtitle">Upload your files, ask questions, and get answers grounded in your content.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if not os.getenv("GOOGLE_API_KEY"):
         st.error("GOOGLE_API_KEY is missing. Add it to the .env file next to app.py, then restart.")
         st.stop()
- 
+
     warm_up()
     st.session_state.setdefault("messages", [])
     render_sidebar()
- 
+
     if "store" not in st.session_state:
-        st.info("Upload your files in the sidebar and click **Submit & Process** to begin.")
+        st.markdown(
+            """
+            <div class="welcome-card">
+                <h3>Start with your documents</h3>
+                <p>Upload one or more PDF, Word, PowerPoint, CSV, JSON, YAML, or text files
+                from the left panel. Select <b>Process documents</b> and your assistant
+                will be ready to answer questions.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         st.stop()
+
+    if not st.session_state.messages:
+        st.markdown(
+            """
+            <div class="welcome-card">
+                <h3>Your documents are ready. What would you like to know?</h3>
+                <p>Ask for a summary, find a specific concept, compare topics, or get an
+                explanation based only on the files you uploaded.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     render_chat()
  
  
