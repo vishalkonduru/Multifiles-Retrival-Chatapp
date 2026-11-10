@@ -726,7 +726,14 @@ def main() -> None:
 
     warm_up()
     st.session_state.setdefault("messages", [])
-    st.session_state.setdefault("session_id", str(uuid.uuid4()))
+    # Keep a stable session key in the URL so saved chat history can be reloaded
+    # after a browser refresh. This is a lightweight single-user/session approach.
+    query_session_id = st.query_params.get("session_id")
+    if query_session_id:
+        st.session_state.session_id = query_session_id
+    else:
+        st.session_state.setdefault("session_id", str(uuid.uuid4()))
+        st.query_params["session_id"] = st.session_state.session_id
     if DATABASE_URL:
         try:
             initialize_database()
