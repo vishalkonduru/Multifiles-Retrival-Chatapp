@@ -1,7 +1,7 @@
 services:
   app:
     build: .
-    image: mfc:1.1
+    image: mfc:1.2
     container_name: multifiles-chatapp
     ports:
       - "8080:8080"
@@ -9,6 +9,9 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       DATABASE_URL: postgresql://${POSTGRES_USER:-mfc_user}:${POSTGRES_PASSWORD:-change_this_password}@db:5432/${POSTGRES_DB:-mfc_db}
+      FAISS_INDEX_DIR: /app/faiss_data
+    volumes:
+      - faiss_data:/app/faiss_data
     depends_on:
       db:
         condition: service_healthy
@@ -32,3 +35,4 @@ services:
 
 volumes:
   postgres_data:
+  faiss_data:
