@@ -290,6 +290,43 @@ def format_history(messages):
     return "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in recent)
  
  
+def session_index_path(session_id: str) -> Path:
+    """Return the persistent FAISS directory for one validated session."""
+    return Path(os.getenv("FAISS_INDEX_DIR", str(Path(__file__).parent / "faiss_data"))) / session_id
+
+
+def save_vector_store(session_id: str, store) -> None:
+    """Save this session's FAISS index to the mounted persistent volume."""
+    index_path = session_index_path(session_id)
+    index_path.mkdir(parents=True, exist_ok=True)
+    store.save_local(str(index_path))
+
+
+def load_vector_store(session_id: str):
+    """Load a trusted FAISS index saved for this session, if one exists."""
+    from langchain_community.vectorstores import FAISS
+
+    index_path = session_index_path(session_id)
+    if not (index_path / "index.faiss").is_file() or not (index_path / "index.pkl").is_file():
+        return None
+    # Only load indexes created by this application in its own persistent volume.
+    return FAISS.load_local(
+        str(index_path),
+        get_embeddings(),
+        allow_dangerous_deserialization=True,
+    )
+
+
+def vector_store_stats(store) -> dict:
+    """Calculate display statistics from a restored FAISS index."""
+    documents = list(store.docstore._dict.values())
+    return {
+        "files": len({doc.metadata.get("source", "unknown") for doc in documents}),
+        "sections": len(documents),
+        "chunks": len(store.index_to_docstore_id),
+    }
+
+
 def initialize_database() -> bool:
     """Create the PostgreSQL tables when DATABASE_URL is configured."""
     if not DATABASE_URL:
@@ -476,6 +513,7 @@ def process_documents(uploaded_files) -> None:
         get_embeddings(),
         lambda done, total: bar.progress(done / total, text=f"Embedded {done} of {total} chunks"),
     )
+    save_vector_store(st.session_state.session_id, st.session_state.store)
     bar.empty()
     st.session_state.stats = {
         "files": len({d.metadata["source"] for d in documents}),
@@ -729,16 +767,34 @@ def main() -> None:
     # Keep a stable session key in the URL so saved chat history can be reloaded
     # after a browser refresh. This is a lightweight single-user/session approach.
     query_session_id = st.query_params.get("session_id")
-    if query_session_id:
-        st.session_state.session_id = query_session_id
-    else:
-        st.session_state.setdefault("session_id", str(uuid.uuid4()))
-        st.query_params["session_id"] = st.session_state.session_id
+    try:
+        # Prevent arbitrary directory names from being used as index paths.
+        st.session_state.session_id = str(uuid.UUID(query_session_id)) if query_session_id else str(uuid.uuid4())
+    except (ValueError, TypeError, AttributeError):
+        st.session_state.session_id = str(uuid.uuid4())
+    st.query_params["session_id"] = st.session_state.session_id
+
     if DATABASE_URL:
         try:
             initialize_database()
         except Exception as error:
             st.sidebar.warning(f"PostgreSQL is not available: {error}")
+
+    if "store" not in st.session_state:
+        try:
+            restored_store = load_vector_store(st.session_state.session_id)
+            if restored_store is not None:
+                st.session_state.store = restored_store
+                st.session_state.stats = vector_store_stats(restored_store)
+                if DATABASE_URL:
+                    try:
+                        st.session_state.messages = load_chat_history(st.session_state.session_id)
+                    except Exception as error:
+                        st.sidebar.warning(f"Could not restore chat history: {error}")
+                st.sidebar.success("Restored your saved document index.")
+        except Exception as error:
+            st.sidebar.warning(f"Could not restore the saved document index: {error}")
+
     render_sidebar()
 
     if "store" not in st.session_state:
