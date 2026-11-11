@@ -35,9 +35,18 @@ all other formats work without it.
 
 ## Run with Docker Compose (recommended)
 
-1. Copy `.env.example` to `.env`.
-2. Add your Gemini API key to `.env` and change the PostgreSQL password.
-3. Build and start the application and database:
+1. Create a file named `.env` in the project root.
+2. Add the following values, replacing the placeholders with your own Gemini API key and a strong PostgreSQL password:
+
+```dotenv
+GOOGLE_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
+POSTGRES_DB=mfc_db
+POSTGRES_USER=mfc_user
+POSTGRES_PASSWORD=replace_with_a_strong_password
+```
+
+Keep `.env` out of Git. Then build and start the application and database:
 
 ```bash
 docker compose up --build -d
@@ -47,17 +56,19 @@ Open http://localhost:8080
 
 View logs with `docker compose logs -f app` and stop the stack with
 `docker compose down`. PostgreSQL data is stored in the named `postgres_data`
-volume and survives normal container recreation. To delete the database data too,
+volume and survives normal container recreation. FAISS indexes are stored in a
+separate named `faiss_data` volume, scoped to each browser session, and are
+reloaded when that session returns. To delete both database and FAISS data too,
 run `docker compose down -v`.
 
 The application image installs the PostgreSQL Python driver through
 `requirements.txt`. PostgreSQL runs as a separate service in
 `docker-compose.yml`; it is not installed inside the application image.
 
-PostgreSQL stores document metadata and chat messages. FAISS currently remains
-in application memory for each Streamlit session, so the vector index must be
-rebuilt by uploading and processing the documents again after a container or
-session restart.
+PostgreSQL stores document metadata and chat messages. The FAISS index is saved
+to the `faiss_data` volume. Uploaded source files themselves are not retained,
+but the saved index can still be used to ask questions after a browser refresh
+or container restart. Use the same browser session URL to reopen that session.
 
 ## Deploy on Google Cloud Run
 ```bash
@@ -68,6 +79,7 @@ gcloud run deploy multidoc-chat --source . --region asia-south1 \
 ## Notes
 - Scanned PDFs and images have no text layer and cannot be read.
 - Only the first 1,000 rows of each CSV are read (`MAX_TABLE_ROWS` in `app.py`).
-- The FAISS index lives in memory for the Streamlit session; process documents again after a session or container restart.
+- FAISS indexes persist in the `faiss_data` Docker volume, with a separate directory per session.
 - PostgreSQL stores chat history and document metadata when started through Docker Compose.
+- Uploaded originals are not stored. The persisted FAISS index contains the extracted chunks used for retrieval.
 - The chat model can be changed with the `GEMINI_MODEL` environment variable.
